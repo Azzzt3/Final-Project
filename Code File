@@ -1,0 +1,253 @@
+# GreenWave Conference System - Option B Medium GUI
+# Full single-file implementation
+
+import pickle
+import os
+from datetime import date, time, datetime
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+
+# === ENUM-LIKE CLASSES ===
+class PaymentMethod:
+    CREDIT_CARD = "CREDIT_CARD"
+    DEBIT_CARD = "DEBIT_CARD"
+    DIGITAL_WALLET = "DIGITAL_WALLET"
+
+class PaymentStatus:
+    PENDING = "PENDING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+class ReservationStatus:
+    PENDING = "PENDING"
+    CONFIRMED = "CONFIRMED"
+    CANCELLED = "CANCELLED"
+
+# === USER CLASSES ===
+class User:
+    def __init__(self, userid, name, email, password):
+        self.userid = userid
+        self.name = name
+        self.email = email
+        self.password = password
+
+    def login(self, password):
+        return self.password == password
+
+class Attendee(User):
+    def __init__(self, userid, name, email, password, phone):
+        super().__init__(userid, name, email, password)
+        self.phone = phone
+        self.passes = []
+        self.reservations = []
+
+class Admin(User):
+    pass
+
+# === PASS CLASSES ===
+class Pass:
+    def __init__(self, passId, price):
+        self.passId = passId
+        self.price = price
+
+class ExhibitionPass(Pass):
+    def __init__(self, passId, price, exhibitionsAllowed):
+        super().__init__(passId, price)
+        self.exhibitionsAllowed = exhibitionsAllowed
+
+class AllAccessPass(Pass):
+    def __init__(self, passId, price):
+        super().__init__(passId, price)
+
+# === CONFERENCE STRUCTURE ===
+class Workshop:
+    def __init__(self, workshopId, title, capacity):
+        self.workshopId = workshopId
+        self.title = title
+        self.capacity = capacity
+        self.reserved = 0
+
+    def hasSpace(self):
+        return self.reserved < self.capacity
+
+class Exhibition:
+    def __init__(self, exhibitionId, title):
+        self.exhibitionId = exhibitionId
+        self.title = title
+        self.workshops = []
+
+class Conference:
+    def __init__(self):
+        self.exhibitions = []
+
+# === RESERVATION ===
+class Reservation:
+    def __init__(self, reservationId, attendee, workshop):
+        self.reservationId = reservationId
+        self.attendee = attendee
+        self.workshop = workshop
+        self.status = ReservationStatus.PENDING
+
+    def confirm(self):
+        if self.workshop.hasSpace():
+            self.workshop.reserved += 1
+            self.status = ReservationStatus.CONFIRMED
+            return True
+        return False
+
+# === DATA MANAGER ===
+class DataManager:
+    FILE = "greenwave_data.pkl"
+
+    @staticmethod
+    def save(data):
+        with open(DataManager.FILE, "wb") as f:
+            pickle.dump(data, f)
+
+    @staticmethod
+    def load():
+        if not os.path.exists(DataManager.FILE):
+            return {"attendees": [], "admins": [], "conference": None}
+        with open(DataManager.FILE, "rb") as f:
+            return pickle.load(f)
+
+# === GUI SYSTEM ===
+class GreenWaveApp:
+    def __init__(self):
+        self.data = DataManager.load()
+        if self.data["conference"] is None:
+            self.data["conference"] = self.createSampleConference()
+        
+        self.window = tk.Tk()
+        self.window.title("GreenWave Conference System")
+
+        self.loggedUser = None
+        self.loginScreen()
+        self.window.mainloop()
+
+    # Sample Data
+    def createSampleConference(self):
+        conf = Conference()
+        ex1 = Exhibition(1, "Climate Tech")
+        ex1.workshops.append(Workshop(1, "Solar Innovations", 3))
+        ex1.workshops.append(Workshop(2, "Wind Turbines", 2))
+
+        ex2 = Exhibition(2, "Policy & Governance")
+        ex2.workshops.append(Workshop(3, "Green Policy 101", 4))
+        ex2.workshops.append(Workshop(4, "Urban Planning", 3))
+
+        conf.exhibitions.extend([ex1, ex2])
+        return conf
+
+    # === LOGIN SCREEN ===
+    def loginScreen(self):
+        for widget in self.window.winfo_children(): widget.destroy()
+
+        tk.Label(self.window, text="Email:").pack()
+        emailEntry = tk.Entry(self.window)
+        emailEntry.pack()
+
+        tk.Label(self.window, text="Password:").pack()
+        passEntry = tk.Entry(self.window, show="*")
+        passEntry.pack()
+
+        def attemptLogin():
+            email = emailEntry.get()
+            pwd = passEntry.get()
+
+            for a in self.data["attendees"]:
+                if a.email == email and a.login(pwd):
+                    self.loggedUser = a
+                    self.attendeeDashboard()
+                    return
+
+            messagebox.showerror("Error", "Invalid login")
+
+        tk.Button(self.window, text="Login", command=attemptLogin).pack()
+        tk.Button(self.window, text="Register", command=self.registerScreen).pack()
+
+    # === REGISTER ===
+    def registerScreen(self):
+        for widget in self.window.winfo_children(): widget.destroy()
+
+        tk.Label(self.window, text="Name:").pack()
+        name = tk.Entry(self.window)
+        name.pack()
+
+        tk.Label(self.window, text="Email:").pack()
+        email = tk.Entry(self.window)
+        email.pack()
+
+        tk.Label(self.window, text="Password:").pack()
+        password = tk.Entry(self.window, show="*")
+        password.pack()
+
+        tk.Label(self.window, text="Phone:").pack()
+        phone = tk.Entry(self.window)
+        phone.pack()
+
+        def register():
+            newA = Attendee(len(self.data["attendees"]) + 1,
+                            name.get(), email.get(), password.get(), phone.get())
+            self.data["attendees"].append(newA)
+            DataManager.save(self.data)
+            messagebox.showinfo("Success", "Account created!")
+            self.loginScreen()
+
+        tk.Button(self.window, text="Create Account", command=register).pack()
+
+    # === DASHBOARD ===
+    def attendeeDashboard(self):
+        for w in self.window.winfo_children(): w.destroy()
+
+        tk.Label(self.window, text=f"Welcome {self.loggedUser.name}").pack()
+        tk.Button(self.window, text="View Workshops", command=self.viewWorkshops).pack()
+        tk.Button(self.window, text="My Reservations", command=self.viewReservations).pack()
+        tk.Button(self.window, text="Logout", command=self.logout).pack()
+
+    # === VIEW WORKSHOPS ===
+    def viewWorkshops(self):
+        for w in self.window.winfo_children(): w.destroy()
+
+        tk.Label(self.window, text="Workshops:").pack()
+
+        for ex in self.data["conference"].exhibitions:
+            tk.Label(self.window, text=f"--- {ex.title} ---").pack()
+            for ws in ex.workshops:
+                btn = tk.Button(self.window,
+                                text=f"{ws.title} ({ws.reserved}/{ws.capacity})",
+                                command=lambda w=ws: self.reserveWorkshop(w))
+                btn.pack()
+
+        tk.Button(self.window, text="Back", command=self.attendeeDashboard).pack()
+
+    # === RESERVE WORKSHOP ===
+    def reserveWorkshop(self, workshop):
+        r = Reservation(len(self.loggedUser.reservations) + 1,
+                        self.loggedUser, workshop)
+
+        if r.confirm():
+            self.loggedUser.reservations.append(r)
+            DataManager.save(self.data)
+            messagebox.showinfo("Success", "Reservation confirmed!")
+        else:
+            messagebox.showerror("Full", "Workshop is full")
+
+    # === VIEW MY RESERVATIONS ===
+    def viewReservations(self):
+        for w in self.window.winfo_children(): w.destroy()
+
+        tk.Label(self.window, text="My Reservations:").pack()
+
+        for r in self.loggedUser.reservations:
+            tk.Label(self.window, text=f"{r.workshop.title} - {r.status}").pack()
+
+        tk.Button(self.window, text="Back", command=self.attendeeDashboard).pack()
+
+    # === LOGOUT ===
+    def logout(self):
+        self.loggedUser = None
+        self.loginScreen()
+
+# === RUN APP ===
+GreenWaveApp()
